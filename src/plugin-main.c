@@ -16,25 +16,27 @@ You should have received a copy of the GNU General Public License along
 with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
+#include <string.h>
+
 #include <obs-module.h>
 #include <plugin-support.h>
 
 #define EKO_PNGTUBER_VERSION "0.0"
 
 OBS_DECLARE_MODULE()
-OBS_MODULE_USE_DEFAULT_LOCALE("OBS PNGtuber", "en-US")
+OBS_MODULE_USE_DEFAULT_LOCALE("Eko's PNGtuber", "en-US")
 
-extern struct obs_source_info pngtuber;
+extern struct obs_source_info eko_pngtuber;
 
 bool obs_module_load(void)
 {
-	obs_register_source(&pngtuber);
+	obs_register_source(&eko_pngtuber);
 	
-	obs_log(LOG_INFO, "OBS PNGtuber loaded successfully (version %s)", EKO_PNGTUBER_VERSION);
+	obs_log(LOG_INFO, "Eko's PNGtuber loaded successfully (version %s)", EKO_PNGTUBER_VERSION);
 	return true;
 }
 
 void obs_module_unload(void)
 {
-	obs_log(LOG_INFO, "OBS PNGtuber unloaded");
+	obs_log(LOG_INFO, "Eko's PNGtuber unloaded");
 }
