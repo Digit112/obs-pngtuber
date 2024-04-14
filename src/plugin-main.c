@@ -1,6 +1,6 @@
 /*
-Plugin Name
-Copyright (C) <Year> <Developer> <Email Address>
+OBS PNGtuber
+Copyright (C) 2024 Ekobadd ekobaddish@gmail.com
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -19,17 +19,22 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <obs-module.h>
 #include <plugin-support.h>
 
+#define EKO_PNGTUBER_VERSION "0.0"
+
 OBS_DECLARE_MODULE()
-OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
+OBS_MODULE_USE_DEFAULT_LOCALE("OBS PNGtuber", "en-US")
+
+extern struct obs_source_info pngtuber;
 
 bool obs_module_load(void)
 {
-	obs_log(LOG_INFO, "plugin loaded successfully (version %s)",
-		PLUGIN_VERSION);
+	obs_register_source(&pngtuber);
+	
+	obs_log(LOG_INFO, "OBS PNGtuber loaded successfully (version %s)", EKO_PNGTUBER_VERSION);
 	return true;
 }
 
 void obs_module_unload(void)
 {
-	obs_log(LOG_INFO, "plugin unloaded");
+	obs_log(LOG_INFO, "OBS PNGtuber unloaded");
 }
