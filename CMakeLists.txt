@@ -34,8 +34,12 @@ if(ENABLE_QT)
                AUTORCC ON)
 endif()
 
+configure_file(src/plugin-support.c.in src/plugin-support.c)
 target_sources(${CMAKE_PROJECT_NAME}
+	PRIVATE src/plugin-support.h
+	PRIVATE src/plugin-support.c
 	PRIVATE src/plugin-main.c
-	PRIVATE src/pngtuber.c)
+	PRIVATE src/pngtuber.c
+)
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})

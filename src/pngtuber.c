@@ -1,4 +1,23 @@
+/*
+Eko's PNGtuber
+Copyright (C) 2024 Ekobadd ekobaddish@gmail.com
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along
+with this program. If not, see <https://www.gnu.org/licenses/>
+*/
+
 #include <time.h>
+#include <stdlib.h>
 
 #include <obs-module.h>
 #include <obs-frontend-api.h>
@@ -12,8 +31,9 @@
 
 /* https://docs.obsproject.com/reference-sources */
 
-// TODO: Two double-destroys occur on shutdown, according to verbose logs. Try using refcounted objects correctly.
+// TODO: Two double-destroys occur on shutdown, according to verbose logs. Try using refcounted objects correctly. May or may not still be an issue.
 // TODO: Add UNUSED_PARAMETER() calls where appropriate.
+// TODO: Add silero speech detection.
 
 /* ---- pngtuber_data ---- */
 
@@ -48,6 +68,9 @@ typedef struct pngtuber_data {
 	
 	// Whether the user is counted as speaking currently.
 	bool is_speaking;
+	
+	// The threshhold for when to detect speech.
+	double audio_thresh;
 } pngtuber_data;
 
 pngtuber_data* eko_pngtuber_data_create() {
@@ -63,6 +86,7 @@ pngtuber_data* eko_pngtuber_data_create() {
 	
 	ctx->audio_source = NULL;
 	ctx->is_speaking = false;
+	ctx->audio_thresh = -35;
 	
 	return ctx;
 }
@@ -156,6 +180,7 @@ static const char* eko_pngtuber_get_name(void* type_data) {
 
 // Callback to ensure that the reference to audio sources are released as necessary.
 static void on_audio_source_destroy(void *data, calldata_t *call_data) {
+	obs_log(LOG_INFO, "Audio Source was Destroyed.");
 	UNUSED_PARAMETER(call_data);
 	pngtuber_data* ctx = data;
 
@@ -182,7 +207,7 @@ void on_audio_source_capture(void *data, obs_source_t *source, const struct audi
 	
 	double audio_level = (double) obs_mul_to_db(sqrtf(sum / audio_block->frames));
 	
-	if (audio_level > -40) {
+	if (audio_level > ctx->audio_thresh) {
 		ctx->is_speaking = true;
 	}
 }
@@ -217,8 +242,8 @@ static void eko_pngtuber_update(void* data, obs_data_t* settings) {
 		// Remove current audio source destroy & capture callbacks.
 		if (current_audio_src != NULL) {
 			sig_handler = obs_source_get_signal_handler(current_audio_src);
+			
 			signal_handler_disconnect(sig_handler, "destroy", on_audio_source_destroy, ctx);
-
 			obs_source_remove_audio_capture_callback(current_audio_src, on_audio_source_capture, ctx);
 
 			obs_weak_source_release(ctx->audio_source);
@@ -226,10 +251,10 @@ static void eko_pngtuber_update(void* data, obs_data_t* settings) {
 		
 		// Add new audio source destroy & capture callbacks.
 		// TODO: Do we need to check whether new_audio_src is NULL?
-		obs_log(LOG_INFO, "Setting callbacks...");
+		obs_log(LOG_INFO, "Setting Audio Source Callbacks...");
 		sig_handler = obs_source_get_signal_handler(new_audio_src);
+		
 		signal_handler_connect(sig_handler, "destroy", on_audio_source_destroy, ctx);
-
 		obs_source_add_audio_capture_callback(new_audio_src, on_audio_source_capture, ctx);
 
 		ctx->audio_source = obs_source_get_weak_source(new_audio_src);
@@ -240,6 +265,8 @@ static void eko_pngtuber_update(void* data, obs_data_t* settings) {
 	if (current_audio_src != NULL) {
 		obs_source_release(current_audio_src);
 	}
+	
+	ctx->audio_thresh = obs_data_get_double(settings, "audio_thresh");
 }
 
 static void eko_pngtuber_get_defaults(obs_data_t* settings) {
@@ -253,6 +280,8 @@ static void* eko_pngtuber_create(obs_data_t* settings, obs_source_t* source) {
 	ctx->source = source;
 	obs_data_set_default_double(settings, "blink_duration", 100);
 	obs_data_set_default_double(settings, "blink_gap", 5);
+	
+	obs_data_set_default_double(settings, "audio_thresh", -35);
 	
 	double cur_time = (double) clock() / CLOCKS_PER_SEC;
 	ctx->last_blink = cur_time;
@@ -313,7 +342,8 @@ static void eko_pngtuber_video_render(void* data, gs_effect_t *effect) {
 	double cur_time = (double) clock() / CLOCKS_PER_SEC;
 	
 	if (cur_time > ctx->next_blink) {
-		ctx->next_blink = cur_time + ctx->blink_gap;
+		double new_blink_gap = ctx->blink_gap * ((double) rand() / RAND_MAX + 0.5);
+		ctx->next_blink = cur_time + new_blink_gap;
 		ctx->last_blink = cur_time;
 	}
 	
@@ -385,6 +415,8 @@ static obs_properties_t *eko_pngtuber_source_properties(void *data) {
 	
 	obs_property_t* sources = obs_properties_add_list(props, "audio_src", "Audio Source", OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
 	obs_enum_sources(enum_audio_sources, sources);
+	
+	obs_properties_add_float(props, "audio_thresh", "Audio Threshhold (db)", -60.0, 0.0, 0.1);
 	
 	obs_properties_add_float(props, "blink_duration", "Blink Duration (ms)", 10.0, 1000.0, 1);
 	obs_properties_add_float(props, "blink_gap", "Avg Time Between Blinks (s)", 1.0, 30.0, 0.1);

@@ -1,5 +1,5 @@
 /*
-OBS PNGtuber
+Eko's PNGtuber
 Copyright (C) 2024 Ekobadd ekobaddish@gmail.com
 
 This program is free software; you can redistribute it and/or modify
@@ -24,7 +24,11 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #define EKO_PNGTUBER_VERSION "0.0"
 
 OBS_DECLARE_MODULE()
-OBS_MODULE_USE_DEFAULT_LOCALE("Eko's PNGtuber", "en-US")
+OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
+MODULE_EXPORT const char *obs_module_description(void)
+{
+	return "Dedicated PNGtuber Source";
+}
 
 extern struct obs_source_info eko_pngtuber;
 
