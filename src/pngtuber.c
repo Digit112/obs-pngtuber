@@ -29,8 +29,6 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <plugin-support.h>
 
-/* https://docs.obsproject.com/reference-sources */
-
 // TODO: Two double-destroys occur on shutdown, according to verbose logs. Try using refcounted objects correctly. May or may not still be an issue.
 // TODO: Add UNUSED_PARAMETER() calls where appropriate.
 // TODO: Add silero speech detection.
