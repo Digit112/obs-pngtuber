@@ -32,6 +32,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 // TODO: Two double-destroys occur on shutdown, according to verbose logs. Try using refcounted objects correctly. May or may not still be an issue.
 // TODO: Add UNUSED_PARAMETER() calls where appropriate.
 // TODO: Add silero speech detection.
+// TODO: Allow source duplication
 
 /* ---- pngtuber_data ---- */
 
@@ -64,11 +65,14 @@ typedef struct pngtuber_data {
 	// The audio source that controls the mouth movement.
 	obs_weak_source_t *audio_source;
 	
-	// Whether the user is counted as speaking currently.
-	bool is_speaking;
+	// The most recent time that the audio in surpassed threshold.
+	double last_time_spoken;
 	
-	// The threshhold for when to detect speech.
+	// The threshold for when to detect speech.
 	double audio_thresh;
+	
+	// Howw long, in seconds, should the mouth stay open in the absence of audio.
+	double mouth_close_delay;
 } pngtuber_data;
 
 pngtuber_data* eko_pngtuber_data_create() {
@@ -83,9 +87,9 @@ pngtuber_data* eko_pngtuber_data_create() {
 	ctx->active_img = ctx->open_closed_img;
 	
 	ctx->audio_source = NULL;
-	ctx->is_speaking = false;
+	ctx->last_time_spoken = 0;
 	ctx->audio_thresh = -35;
-	
+	ctx->mouth_close_delay = 0.1;
 	return ctx;
 }
 
@@ -189,7 +193,6 @@ static void on_audio_source_destroy(void *data, calldata_t *call_data) {
 // Callback to set flag when the user is speaking.
 void on_audio_source_capture(void *data, obs_source_t *source, const struct audio_data *audio_block, bool muted) {
 	pngtuber_data* ctx = data;
-	ctx->is_speaking = false;
 	
 	if (muted) return;
 
@@ -206,7 +209,7 @@ void on_audio_source_capture(void *data, obs_source_t *source, const struct audi
 	double audio_level = (double) obs_mul_to_db(sqrtf(sum / audio_block->frames));
 	
 	if (audio_level > ctx->audio_thresh) {
-		ctx->is_speaking = true;
+		ctx->last_time_spoken = (double) clock() / CLOCKS_PER_SEC;
 	}
 }
 
@@ -223,6 +226,8 @@ static void eko_pngtuber_update(void* data, obs_data_t* settings) {
 	
 	ctx->blink_duration = obs_data_get_double(settings, "blink_duration") / 1000;
 	ctx->blink_gap = obs_data_get_double(settings, "blink_gap");
+	
+	ctx->mouth_close_delay = obs_data_get_double(settings, "mouth_close_delay") / 1000;
 	
 	// Update audio source.
 	// TODO: If new source is NULL, replace settings value with ""?
@@ -280,6 +285,7 @@ static void* eko_pngtuber_create(obs_data_t* settings, obs_source_t* source) {
 	obs_data_set_default_double(settings, "blink_gap", 5);
 	
 	obs_data_set_default_double(settings, "audio_thresh", -35);
+	obs_data_set_default_double(settings, "mouth_close_delay", 100);
 	
 	double cur_time = (double) clock() / CLOCKS_PER_SEC;
 	ctx->last_blink = cur_time;
@@ -339,6 +345,7 @@ static void eko_pngtuber_video_render(void* data, gs_effect_t *effect) {
 	
 	double cur_time = (double) clock() / CLOCKS_PER_SEC;
 	
+	// handle blinking
 	if (cur_time > ctx->next_blink) {
 		double new_blink_gap = ctx->blink_gap * ((double) rand() / RAND_MAX + 0.5);
 		ctx->next_blink = cur_time + new_blink_gap;
@@ -350,23 +357,28 @@ static void eko_pngtuber_video_render(void* data, gs_effect_t *effect) {
 		is_blinking = true;
 	}
 	
-	if (is_blinking) {
-		if (ctx->is_speaking) {
+	// Handle speaking.
+	bool is_speaking = cur_time - ctx->last_time_spoken < ctx->mouth_close_delay;
+	
+	// Select appropriate PNG.
+	if (is_speaking) {
+		if (is_blinking) {
 			ctx->active_img = ctx->closed_open_img;
 		}
 		else {
-			ctx->active_img = ctx->closed_closed_img;
+			ctx->active_img = ctx->open_open_img;
 		}
 	}
 	else {
-		if (ctx->is_speaking) {
-			ctx->active_img = ctx->open_open_img;
+		if (is_blinking) {
+			ctx->active_img = ctx->closed_closed_img;
 		}
 		else {
 			ctx->active_img = ctx->open_closed_img;
 		}
 	}
-
+	
+	// Render image.
 	gs_image_file4_t *const img = ctx->active_img;
 	if (img == NULL || img->image3.image2.image.texture == NULL)
 		return;
@@ -400,24 +412,26 @@ static bool enum_audio_sources(void *data, obs_source_t *source) {
 	return true;
 }
 
-static obs_properties_t *eko_pngtuber_source_properties(void *data) {
+static obs_properties_t *eko_pngtuber_properties(void *data) {
 	UNUSED_PARAMETER(data);
-	obs_log(LOG_INFO, "Source Properties");
+	obs_log(LOG_INFO, "Get Properties");
 
 	obs_properties_t *props = obs_properties_create();
 	// TODO: Replace display names with localized obs_module_text()
-	obs_properties_add_path(props, "open_open", "Eyes Open Mouth Open", OBS_PATH_FILE, image_filter, NULL);
-	obs_properties_add_path(props, "open_closed", "Eyes Open Mouth Closed", OBS_PATH_FILE, image_filter, NULL);
-	obs_properties_add_path(props, "closed_open", "Eyes Closed Mouth Open", OBS_PATH_FILE, image_filter, NULL);
-	obs_properties_add_path(props, "closed_closed", "Eyes Closed Mouth Closed", OBS_PATH_FILE, image_filter, NULL);
+	obs_properties_add_path(props, "open_open", obs_module_text("OpenOpen"), OBS_PATH_FILE, image_filter, NULL);
+	obs_properties_add_path(props, "open_closed", obs_module_text("OpenClosed"), OBS_PATH_FILE, image_filter, NULL);
+	obs_properties_add_path(props, "closed_open", obs_module_text("ClosedOpen"), OBS_PATH_FILE, image_filter, NULL);
+	obs_properties_add_path(props, "closed_closed", obs_module_text("ClosedClosed"), OBS_PATH_FILE, image_filter, NULL);
 	
-	obs_property_t* sources = obs_properties_add_list(props, "audio_src", "Audio Source", OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+	obs_property_t* sources = obs_properties_add_list(props, "audio_src", obs_module_text("Audio Source"), OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
 	obs_enum_sources(enum_audio_sources, sources);
 	
-	obs_properties_add_float(props, "audio_thresh", "Audio Threshhold (db)", -60.0, 0.0, 0.1);
+	obs_properties_add_float(props, "audio_thresh", obs_module_text("AudioThreshold"), -60.0, 0.0, 0.1);
 	
-	obs_properties_add_float(props, "blink_duration", "Blink Duration (ms)", 10.0, 1000.0, 1);
-	obs_properties_add_float(props, "blink_gap", "Avg Time Between Blinks (s)", 1.0, 30.0, 0.1);
+	obs_properties_add_float(props, "blink_duration", obs_module_text("BlinkDuration"), 10.0, 1000.0, 1);
+	obs_properties_add_float(props, "blink_gap", obs_module_text("BlinkGap"), 1.0, 30.0, 0.1);
+	
+	obs_properties_add_float(props, "mouth_close_delay", obs_module_text("MouthCloseDelay"), 1.0, 1000.0, 1);
 	
 	return props;
 }
@@ -445,7 +459,7 @@ struct obs_source_info eko_pngtuber = {
 	.get_height     = eko_pngtuber_get_height,
 	.video_render   = eko_pngtuber_video_render,
 //	.missing_files  = image_source_missingfiles,
-	.get_properties = eko_pngtuber_source_properties,
+	.get_properties = eko_pngtuber_properties,
 	.icon_type      = OBS_ICON_TYPE_IMAGE,
 	.activate       = eko_pngtuber_activate,
 	.video_get_color_space = eko_pngtuber_get_color_space
